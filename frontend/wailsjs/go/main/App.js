@@ -14,6 +14,10 @@ export function GetEffectiveConfig(arg1) {
   return window['go']['main']['App']['GetEffectiveConfig'](arg1);
 }
 
+export function GetGlobalConfig() {
+  return window['go']['main']['App']['GetGlobalConfig']();
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
@@ -28,6 +32,10 @@ export function ListIncludeRules() {
 
 export function ListRoots() {
   return window['go']['main']['App']['ListRoots']();
+}
+
+export function PickRoot() {
+  return window['go']['main']['App']['PickRoot']();
 }
 
 export function RemoveRoot(arg1) {

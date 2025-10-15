@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ type RepositoryService interface {
 	ListRoots() []string
 	AddRoot(path string) error
 	RemoveRoot(path string)
+	ResolveRepository(ctx context.Context, path string) (Repository, error)
 	Scan(ctx context.Context, opts ScanOptions) ([]Repository, error)
 }
 
@@ -78,6 +80,8 @@ func (s *Service) AddRoot(path string) error {
 		return errors.New("path cannot be empty")
 	}
 
+	path = filepath.Clean(path)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -93,33 +97,54 @@ func (s *Service) RemoveRoot(path string) {
 	delete(s.roots, path)
 }
 
-// Scan synthesises repositories for the configured roots. Placeholder implementation.
-func (s *Service) Scan(ctx context.Context, opts ScanOptions) ([]Repository, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// ResolveRepository validates the provided path and returns repository metadata.
+func (s *Service) ResolveRepository(ctx context.Context, path string) (Repository, error) {
+	select {
+	case <-ctx.Done():
+		return Repository{}, ctx.Err()
+	default:
+	}
 
+	repo, err := buildRepository(ctx, path)
+	if err != nil {
+		return Repository{}, fmt.Errorf("选中的目录不是有效的 Git 仓库: %w", err)
+	}
+	return repo, nil
+}
+
+// Scan resolves repository metadata for the configured roots.
+func (s *Service) Scan(ctx context.Context, opts ScanOptions) ([]Repository, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
 
-	now := time.Now()
-	results := make([]Repository, 0, len(s.roots))
-
+	s.mu.RLock()
+	roots := make([]string, 0, len(s.roots))
 	for root := range s.roots {
-		id := ensureID(root)
-		repo := Repository{
-			ID:           id,
-			Name:         fallbackName(root),
-			Path:         root,
-			Root:         root,
-			Type:         RepositoryTypeUnknown,
-			GitDir:       fmt.Sprintf("%s/.git", root),
-			LastScanTime: timestamp(now),
-			Status:       RepoStatusIdle,
+		roots = append(roots, root)
+	}
+	s.mu.RUnlock()
+
+	discovered := make(map[string]Repository)
+
+	for _, root := range roots {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
 		}
-		s.repositories[id] = repo
+
+		repo, err := buildRepository(ctx, root)
+		if err != nil {
+			return nil, fmt.Errorf("discover repository at %q: %w", root, err)
+		}
+		discovered[repo.ID] = repo
+	}
+
+	results := make([]Repository, 0, len(discovered))
+	for _, repo := range discovered {
 		results = append(results, repo)
 	}
 
@@ -127,10 +152,35 @@ func (s *Service) Scan(ctx context.Context, opts ScanOptions) ([]Repository, err
 		return results[i].Name < results[j].Name
 	})
 
+	s.mu.Lock()
+	s.repositories = discovered
+	s.mu.Unlock()
+
 	return results, nil
 }
 
-// GetEffectiveConfig returns canned configuration data to unblock UI development.
+// GetGlobalConfig returns the global git configuration for the current user.
+func (s *Service) GetGlobalConfig(ctx context.Context) (ConfigMatrix, error) {
+	select {
+	case <-ctx.Done():
+		return ConfigMatrix{}, ctx.Err()
+	default:
+	}
+
+	values, err := readGlobalConfig(ctx)
+	if err != nil {
+		return ConfigMatrix{}, err
+	}
+
+	matrix := ConfigMatrix{
+		RepositoryID: "global",
+		Entries:      values,
+		RetrievedAt:  timestamp(time.Now()),
+	}
+	return matrix, nil
+}
+
+// GetEffectiveConfig resolves repo configuration via the git CLI.
 func (s *Service) GetEffectiveConfig(ctx context.Context, repositoryID string) (ConfigMatrix, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -146,45 +196,15 @@ func (s *Service) GetEffectiveConfig(ctx context.Context, repositoryID string) (
 		return ConfigMatrix{}, fmt.Errorf("repository %q not found", repositoryID)
 	}
 
-	now := time.Now()
-	entries := map[string]ConfigValue{
-		"user.name": {
-			Key:   "user.name",
-			Value: "Sample User",
-			Source: ConfigSource{
-				Scope: ConfigScopeLocal,
-				File:  fmt.Sprintf("%s/.git/config", repo.Path),
-				Line:  2,
-			},
-			Overrides: []ConfigOverride{
-				{
-					Value: "Global User",
-					Source: ConfigSource{
-						Scope: ConfigScopeGlobal,
-						File:  "~/.gitconfig",
-						Line:  12,
-					},
-					Timestamp: timestamp(now.Add(-24 * time.Hour)),
-				},
-			},
-			LastModified: timestamp(now.Add(-2 * time.Hour)),
-		},
-		"user.email": {
-			Key:   "user.email",
-			Value: "sample@example.com",
-			Source: ConfigSource{
-				Scope: ConfigScopeInclude,
-				File:  "~/.config/git/work.cfg",
-				Line:  8,
-			},
-			LastModified: timestamp(now.Add(-4 * time.Hour)),
-		},
+	values, err := readGitConfig(ctx, repo.Path)
+	if err != nil {
+		return ConfigMatrix{}, err
 	}
 
 	matrix := ConfigMatrix{
 		RepositoryID: repositoryID,
-		Entries:      entries,
-		RetrievedAt:  timestamp(now),
+		Entries:      values,
+		RetrievedAt:  timestamp(time.Now()),
 	}
 
 	return matrix, nil
@@ -370,23 +390,6 @@ func ensureID(input string) string {
 	// Deterministic fallback for now: use UUID5 style hashing for stability.
 	u := uuid.NewSHA1(uuid.Nil, []byte(input))
 	return u.String()
-}
-
-func fallbackName(path string) string {
-	if path == "" {
-		return "repository"
-	}
-
-	for i := len(path) - 1; i >= 0; i-- {
-		switch path[i] {
-		case '/', '\\':
-			if i == len(path)-1 {
-				continue
-			}
-			return path[i+1:]
-		}
-	}
-	return path
 }
 
 func timestamp(t time.Time) string {

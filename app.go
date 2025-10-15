@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"git-config-manager/internal/gitcfg"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -55,6 +56,35 @@ func (a *App) ScanRepositories(opts gitcfg.ScanOptions) ([]gitcfg.Repository, er
 // GetEffectiveConfig resolves configuration for a repository.
 func (a *App) GetEffectiveConfig(repositoryID string) (gitcfg.ConfigMatrix, error) {
 	return a.service.GetEffectiveConfig(a.ctx, repositoryID)
+}
+
+// GetGlobalConfig resolves the global git configuration.
+func (a *App) GetGlobalConfig() (gitcfg.ConfigMatrix, error) {
+	return a.service.GetGlobalConfig(a.ctx)
+}
+
+// PickRoot opens a directory picker and registers the selected repository.
+func (a *App) PickRoot() (gitcfg.Repository, error) {
+	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "选择一个 Git 仓库目录",
+	})
+	if err != nil {
+		return gitcfg.Repository{}, err
+	}
+	if path == "" {
+		return gitcfg.Repository{}, nil
+	}
+
+	repo, err := a.service.ResolveRepository(a.ctx, path)
+	if err != nil {
+		return gitcfg.Repository{}, err
+	}
+
+	if err := a.service.AddRoot(repo.Path); err != nil {
+		return gitcfg.Repository{}, err
+	}
+
+	return repo, nil
 }
 
 // WriteConfig performs a write operation for a repository.

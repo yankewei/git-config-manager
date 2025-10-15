@@ -8,6 +8,8 @@ export function DeleteIncludeRule(arg1:string):Promise<void>;
 
 export function GetEffectiveConfig(arg1:string):Promise<gitcfg.ConfigMatrix>;
 
+export function GetGlobalConfig():Promise<gitcfg.ConfigMatrix>;
+
 export function Greet(arg1:string):Promise<string>;
 
 export function ListChangeSets(arg1:string):Promise<Array<gitcfg.ChangeSet>>;
@@ -15,6 +17,8 @@ export function ListChangeSets(arg1:string):Promise<Array<gitcfg.ChangeSet>>;
 export function ListIncludeRules():Promise<Array<gitcfg.IncludeRule>>;
 
 export function ListRoots():Promise<Array<string>>;
+
+export function PickRoot():Promise<gitcfg.Repository>;
 
 export function RemoveRoot(arg1:string):Promise<void>;
 
