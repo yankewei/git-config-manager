@@ -31,7 +31,9 @@
   color: rgba(226, 232, 240, 0.7);
   cursor: pointer;
   font-size: 0.85rem;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
 }
 
 .tab-button:hover {
@@ -221,7 +223,9 @@
   gap: 0.5rem;
   justify-content: space-between;
   align-items: center;
-  transition: border 0.2s ease, background 0.2s ease;
+  transition:
+    border 0.2s ease,
+    background 0.2s ease;
 }
 
 .root-list li span,
@@ -293,6 +297,18 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
+}
+
+.config-section + .config-section {
+  margin-top: 1rem;
+}
+
+.config-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.85);
+  letter-spacing: 0.01em;
 }
 
 .config-grid th,

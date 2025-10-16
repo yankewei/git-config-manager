@@ -19,9 +19,41 @@ import { gitcfg } from "../wailsjs/go/models";
 
 type Repository = gitcfg.Repository;
 type ConfigMatrix = gitcfg.ConfigMatrix;
+type ConfigValue = gitcfg.ConfigValue;
 type IncludeRule = gitcfg.IncludeRule;
 type ChangeSet = gitcfg.ChangeSet;
 type TabKey = "global" | "repositories";
+
+type ConfigSectionGroup = {
+  section: string;
+  entries: ConfigValue[];
+};
+
+const DEFAULT_SECTION_NAME = "其他";
+
+function groupConfigEntries(matrix: ConfigMatrix | null): ConfigSectionGroup[] {
+  if (!matrix?.entries) {
+    return [];
+  }
+
+  const sections = new Map<string, ConfigValue[]>();
+  Object.values(matrix.entries).forEach((entry) => {
+    const [rawSection] = entry.key.split(".");
+    const sectionName =
+      (rawSection && rawSection.trim()) || DEFAULT_SECTION_NAME;
+    if (!sections.has(sectionName)) {
+      sections.set(sectionName, []);
+    }
+    sections.get(sectionName)!.push(entry);
+  });
+
+  return Array.from(sections.entries())
+    .map(([section, entries]) => ({
+      section,
+      entries: entries.sort((a, b) => a.key.localeCompare(b.key)),
+    }))
+    .sort((a, b) => a.section.localeCompare(b.section));
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("repositories");
@@ -47,23 +79,15 @@ function App() {
     [repositories, selectedRepoId],
   );
 
-  const configEntries = useMemo(() => {
-    if (!configMatrix) {
-      return [];
-    }
-    const entries = Object.values(configMatrix.entries ?? {});
-    entries.sort((a, b) => a.key.localeCompare(b.key));
-    return entries;
-  }, [configMatrix]);
+  const configSections = useMemo(
+    () => groupConfigEntries(configMatrix),
+    [configMatrix],
+  );
 
-  const globalEntries = useMemo(() => {
-    if (!globalConfig) {
-      return [];
-    }
-    const entries = Object.values(globalConfig.entries ?? {});
-    entries.sort((a, b) => a.key.localeCompare(b.key));
-    return entries;
-  }, [globalConfig]);
+  const globalSections = useMemo(
+    () => groupConfigEntries(globalConfig),
+    [globalConfig],
+  );
 
   const handleError = useCallback((err: unknown, fallbackMessage: string) => {
     console.error(err);
@@ -337,7 +361,9 @@ function App() {
           <div className="feedback feedback-info">{infoMessage}</div>
         )}
       </div>
-      <div className={`content ${activeTab === "global" ? "content-global" : ""}`}>
+      <div
+        className={`content ${activeTab === "global" ? "content-global" : ""}`}
+      >
         {activeTab === "global" ? (
           <main className="main-content global-main">
             <section className="panel">
@@ -357,33 +383,38 @@ function App() {
                 </div>
               </header>
               <div className="panel-body config-grid">
-                {globalEntries.length ? (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>键</th>
-                        <th>值</th>
-                        <th>作用域</th>
-                        <th>来源</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {globalEntries.map((entry) => (
-                        <tr key={entry.key}>
-                          <td>{entry.key}</td>
-                          <td>{entry.value}</td>
-                          <td>{entry.source.scope}</td>
-                          <td>
-                            <div>{entry.source.file}</div>
-                            {typeof entry.source.line === "number" &&
-                              entry.source.line > 0 && (
-                              <div>行 {entry.source.line}</div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {globalSections.length ? (
+                  globalSections.map(({ section, entries }) => (
+                    <div key={section} className="config-section">
+                      <h3>{section}</h3>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>键</th>
+                            <th>值</th>
+                            <th>作用域</th>
+                            <th>来源</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {entries.map((entry) => (
+                            <tr key={entry.key}>
+                              <td>{entry.key}</td>
+                              <td>{entry.value}</td>
+                              <td>{entry.source.scope}</td>
+                              <td>
+                                <div>{entry.source.file}</div>
+                                {typeof entry.source.line === "number" &&
+                                  entry.source.line > 0 && (
+                                    <div>行 {entry.source.line}</div>
+                                  )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
                 ) : (
                   <div className="empty-state">尚未读取到全局配置</div>
                 )}
@@ -402,18 +433,25 @@ function App() {
                     <button onClick={handlePickRoot} type="button">
                       选择目录
                     </button>
-                    <span className="helper-text">从 Finder 中选择一个 Git 仓库</span>
+                    <span className="helper-text">
+                      从 Finder 中选择一个 Git 仓库
+                    </span>
                   </div>
                   <ul className="root-list">
                     {roots.map((root) => (
                       <li key={root}>
                         <span title={root}>{root}</span>
-                        <button onClick={() => handleRemoveRoot(root)} type="button">
+                        <button
+                          onClick={() => handleRemoveRoot(root)}
+                          type="button"
+                        >
                           移除
                         </button>
                       </li>
                     ))}
-                    {!roots.length && <div className="empty-state">尚未添加目录</div>}
+                    {!roots.length && (
+                      <div className="empty-state">尚未添加目录</div>
+                    )}
                   </ul>
                 </div>
               </section>
@@ -426,7 +464,9 @@ function App() {
                     <input
                       value={newRulePattern}
                       placeholder="gitdir:~/projects/*"
-                      onChange={(event) => setNewRulePattern(event.target.value)}
+                      onChange={(event) =>
+                        setNewRulePattern(event.target.value)
+                      }
                     />
                     <input
                       value={newRuleTarget}
@@ -439,16 +479,25 @@ function App() {
                   </div>
                   <ul className="rule-list">
                     {includeRules.map((rule) => (
-                      <li key={rule.id} className={rule.enabled ? "" : "disabled"}>
+                      <li
+                        key={rule.id}
+                        className={rule.enabled ? "" : "disabled"}
+                      >
                         <div className="rule-info">
                           <div className="rule-pattern">{rule.pattern}</div>
                           <div className="rule-target">{rule.targetPath}</div>
                         </div>
                         <div className="rule-actions">
-                          <button onClick={() => handleRuleToggle(rule)} type="button">
+                          <button
+                            onClick={() => handleRuleToggle(rule)}
+                            type="button"
+                          >
                             {rule.enabled ? "禁用" : "启用"}
                           </button>
-                          <button onClick={() => handleRuleDelete(rule.id)} type="button">
+                          <button
+                            onClick={() => handleRuleDelete(rule.id)}
+                            type="button"
+                          >
                             删除
                           </button>
                         </div>
@@ -472,7 +521,9 @@ function App() {
               <section className="panel">
                 <header className="panel-header">
                   <h2>仓库</h2>
-                  {loadingRepos && <span className="status-indicator">扫描中…</span>}
+                  {loadingRepos && (
+                    <span className="status-indicator">扫描中…</span>
+                  )}
                 </header>
                 <div className="panel-body">
                   <ul className="repo-list">
@@ -512,33 +563,38 @@ function App() {
                   )}
                 </header>
                 <div className="panel-body config-grid">
-                  {configEntries.length ? (
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>键</th>
-                          <th>值</th>
-                          <th>作用域</th>
-                          <th>来源</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {configEntries.map((entry) => (
-                          <tr key={entry.key}>
-                            <td>{entry.key}</td>
-                            <td>{entry.value}</td>
-                            <td>{entry.source.scope}</td>
-                            <td>
-                              <div>{entry.source.file}</div>
-                              {typeof entry.source.line === "number" &&
-                                entry.source.line > 0 && (
-                                <div>行 {entry.source.line}</div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  {configSections.length ? (
+                    configSections.map(({ section, entries }) => (
+                      <div key={section} className="config-section">
+                        <h3>{section}</h3>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>键</th>
+                              <th>值</th>
+                              <th>作用域</th>
+                              <th>来源</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entries.map((entry) => (
+                              <tr key={entry.key}>
+                                <td>{entry.key}</td>
+                                <td>{entry.value}</td>
+                                <td>{entry.source.scope}</td>
+                                <td>
+                                  <div>{entry.source.file}</div>
+                                  {typeof entry.source.line === "number" &&
+                                    entry.source.line > 0 && (
+                                      <div>行 {entry.source.line}</div>
+                                    )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))
                   ) : (
                     <div className="empty-state">
                       {selectedRepository
