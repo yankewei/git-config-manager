@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  DeleteIncludeRule,
   GetEffectiveConfig,
   GetGlobalConfig,
   ListChangeSets,
-  ListIncludeRules,
-  ListRoots,
   PickRoot,
   RemoveRoot,
   Rollback,
   ScanRepositories,
-  ToggleIncludeRule,
-  UpsertIncludeRule,
   WriteConfig,
 } from "../wailsjs/go/main/App";
 import { gitcfg } from "../wailsjs/go/models";
@@ -25,7 +20,6 @@ import {
   CardHeader,
   CardTitle,
 } from "./components/ui/card";
-import { Input } from "./components/ui/input";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { cn } from "./lib/utils";
@@ -35,7 +29,6 @@ import {
   FileDiff,
   FolderOpen,
   LoaderCircle,
-  Power,
   RefreshCw,
   Trash2,
   Undo2,
@@ -44,7 +37,6 @@ import {
 type Repository = gitcfg.Repository;
 type ConfigMatrix = gitcfg.ConfigMatrix;
 type ConfigValue = gitcfg.ConfigValue;
-type IncludeRule = gitcfg.IncludeRule;
 type ChangeSet = gitcfg.ChangeSet;
 type TabKey = "global" | "repositories";
 
@@ -166,21 +158,28 @@ function ConfigSections({ sections }: { sections: ConfigSectionGroup[] }) {
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("repositories");
   const [globalConfig, setGlobalConfig] = useState<ConfigMatrix | null>(null);
-  const [roots, setRoots] = useState<string[]>([]);
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
   const [configMatrix, setConfigMatrix] = useState<ConfigMatrix | null>(null);
   const [changeSets, setChangeSets] = useState<ChangeSet[]>([]);
-  const [includeRules, setIncludeRules] = useState<IncludeRule[]>([]);
-
-  const [newRulePattern, setNewRulePattern] = useState("");
-  const [newRuleTarget, setNewRuleTarget] = useState("");
 
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [loadingGlobal, setLoadingGlobal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const body = document.body;
+    const previousOverflow = body.style.overflowY;
+    body.style.overflowY = "scroll";
+    return () => {
+      body.style.overflowY = previousOverflow;
+    };
+  }, []);
 
   const selectedRepository = useMemo(
     () => repositories.find((repo) => repo.id === selectedRepoId) ?? null,
@@ -205,15 +204,10 @@ function App() {
   }, []);
 
   const refreshRepositories = useCallback(
-    async (forceRefresh = false, currentRoots?: string[]) => {
+    async (forceRefresh = false) => {
       setLoadingRepos(true);
       setError(null);
       try {
-        if (currentRoots && currentRoots.length === 0) {
-          setRepositories([]);
-          setSelectedRepoId(null);
-          return;
-        }
         const repos = await ScanRepositories(
           gitcfg.ScanOptions.createFrom({ forceRefresh }),
         );
@@ -227,32 +221,13 @@ function App() {
         const nextId = existing?.id ?? repos[0]?.id ?? null;
         setSelectedRepoId(nextId);
       } catch (err) {
-        handleError(err, "扫描仓库失败");
+        handleError(err, "加载仓库列表失败");
       } finally {
         setLoadingRepos(false);
       }
     },
     [handleError, selectedRepoId],
   );
-
-  const refreshRoots = useCallback(async () => {
-    try {
-      const discovered = await ListRoots();
-      setRoots(discovered);
-      await refreshRepositories(false, discovered);
-    } catch (err) {
-      handleError(err, "无法加载扫描目录列表");
-    }
-  }, [handleError, refreshRepositories]);
-
-  const refreshIncludeRules = useCallback(async () => {
-    try {
-      const rules = await ListIncludeRules();
-      setIncludeRules(rules);
-    } catch (err) {
-      handleError(err, "加载 includeIf 规则失败");
-    }
-  }, [handleError]);
 
   const refreshGlobalConfig = useCallback(async () => {
     setLoadingGlobal(true);
@@ -288,8 +263,8 @@ function App() {
   );
 
   const bootstrap = useCallback(async () => {
-    await Promise.all([refreshRoots(), refreshIncludeRules()]);
-  }, [refreshRoots, refreshIncludeRules]);
+    await refreshRepositories();
+  }, [refreshRepositories]);
 
   useEffect(() => {
     void bootstrap();
@@ -310,7 +285,7 @@ function App() {
     }
   }, [activeTab, globalConfig, loadingGlobal, refreshGlobalConfig]);
 
-  const handlePickRoot = async () => {
+  const handleAddRepository = async () => {
     try {
       setError(null);
       setInfoMessage(null);
@@ -318,22 +293,23 @@ function App() {
       if (!repo || !repo.id) {
         return;
       }
-      await refreshRoots();
+      await refreshRepositories();
+      setSelectedRepoId(repo.id);
       setInfoMessage(`已添加 ${repo.name}`);
     } catch (err) {
-      handleError(err, "选择目录失败");
+      handleError(err, "选择仓库失败");
     }
   };
 
-  const handleRemoveRoot = async (path: string) => {
+  const handleRemoveRepository = async (repository: Repository) => {
     try {
       setError(null);
       setInfoMessage(null);
-      await RemoveRoot(path);
-      await refreshRoots();
-      setInfoMessage("目录已移除");
+      await RemoveRoot(repository.path);
+      await refreshRepositories();
+      setInfoMessage("仓库已移除");
     } catch (err) {
-      handleError(err, "移除目录失败");
+      handleError(err, "移除仓库失败");
     }
   };
 
@@ -348,9 +324,6 @@ function App() {
     setError(null);
     setInfoMessage(null);
     await refreshRepositories(true);
-    if (selectedRepoId) {
-      await loadRepositoryDetails(selectedRepoId);
-    }
     setInfoMessage("仓库信息已刷新");
   };
 
@@ -372,60 +345,7 @@ function App() {
     setActiveTab(tab);
   };
 
-  const handleRuleToggle = async (rule: IncludeRule) => {
-    try {
-      setError(null);
-      setInfoMessage(null);
-      const updated = await ToggleIncludeRule(rule.id, !rule.enabled);
-      setIncludeRules((rules) =>
-        rules.map((item) => (item.id === updated.id ? updated : item)),
-      );
-      setInfoMessage("规则状态已更新");
-    } catch (err) {
-      handleError(err, "更新规则状态失败");
-    }
-  };
-
-  const handleRuleDelete = async (ruleId: string) => {
-    try {
-      setError(null);
-      setInfoMessage(null);
-      await DeleteIncludeRule(ruleId);
-      setIncludeRules((rules) => rules.filter((rule) => rule.id !== ruleId));
-      setInfoMessage("规则已删除");
-    } catch (err) {
-      handleError(err, "删除规则失败");
-    }
-  };
-
-  const handleCreateRule = async () => {
-    if (!newRulePattern.trim() || !newRuleTarget.trim()) {
-      return;
-    }
-    try {
-      setError(null);
-      setInfoMessage(null);
-      const ruleModel = gitcfg.IncludeRule.createFrom({
-        id: "",
-        pattern: newRulePattern.trim(),
-        targetPath: newRuleTarget.trim(),
-        enabled: true,
-        conflicts: [],
-        lastUpdated: "",
-      });
-      const rule: IncludeRule = await UpsertIncludeRule(ruleModel);
-      setIncludeRules((rules) => [...rules, rule]);
-      setNewRulePattern("");
-      setNewRuleTarget("");
-      setInfoMessage("规则已保存");
-    } catch (err) {
-      handleError(err, "保存规则失败");
-    }
-  };
-
   const latestChange = changeSets[0];
-  const canCreateRule =
-    Boolean(newRulePattern.trim()) && Boolean(newRuleTarget.trim());
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -465,7 +385,7 @@ function App() {
             {loadingRepos && activeTab === "repositories" && (
               <Badge variant="info" className="gap-2">
                 <LoaderCircle className="h-3 w-3 animate-spin" />
-                正在扫描
+                正在加载
               </Badge>
             )}
             {loadingGlobal && activeTab === "global" && (
@@ -536,179 +456,24 @@ function App() {
             value="repositories"
             className="flex flex-1 flex-col overflow-hidden"
           >
-            <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[320px_1fr]">
+            <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[360px_1fr]">
               <div className="flex flex-col gap-4 overflow-hidden">
                 <Card className="flex h-full flex-col">
                   <CardHeader className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle>扫描目录</CardTitle>
+                      <CardTitle>仓库</CardTitle>
                       <Button
-                        onClick={handlePickRoot}
+                        onClick={handleAddRepository}
                         size="sm"
                         className="gap-2"
                       >
                         <FolderOpen className="h-4 w-4" />
-                        选择目录
+                        添加仓库
                       </Button>
                     </div>
                     <CardDescription>
-                      从 Finder 中选择包含 Git 仓库的目录。
+                      选择本地 Git 仓库，将其加入管理列表。当前共 {repositories.length} 个仓库。
                     </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex-1 overflow-hidden">
-                    {roots.length ? (
-                      <ScrollArea className="h-full pr-2">
-                        <ul className="space-y-2 text-sm">
-                          {roots.map((root) => (
-                            <li
-                              key={root}
-                              className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2"
-                            >
-                              <span
-                                className="flex-1 truncate text-muted-foreground"
-                                title={root}
-                              >
-                                {root}
-                              </span>
-                              <Button
-                                onClick={() => handleRemoveRoot(root)}
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="text-muted-foreground transition hover:text-destructive"
-                                aria-label={`移除 ${root}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </li>
-                          ))}
-                        </ul>
-                      </ScrollArea>
-                    ) : (
-                      <EmptyState
-                        title="尚未添加目录"
-                        description="添加一个根目录以开始扫描仓库。"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="flex h-full flex-col">
-                  <CardHeader className="space-y-2">
-                    <CardTitle>includeIf 规则</CardTitle>
-                    <CardDescription>
-                      自动为匹配的仓库加载额外配置文件。
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex-1 space-y-4 overflow-hidden">
-                    <div className="space-y-2 rounded-lg border border-dashed border-border/60 bg-muted/30 p-4">
-                      <div className="space-y-2">
-                        <Input
-                          value={newRulePattern}
-                          placeholder="gitdir:~/projects/*"
-                          onChange={(event) =>
-                            setNewRulePattern(event.target.value)
-                          }
-                        />
-                        <Input
-                          value={newRuleTarget}
-                          placeholder="配置文件路径，例如 ~/.gitconfig-work"
-                          onChange={(event) =>
-                            setNewRuleTarget(event.target.value)
-                          }
-                        />
-                      </div>
-                      <Button
-                        onClick={handleCreateRule}
-                        type="button"
-                        size="sm"
-                        className="gap-2"
-                        disabled={!canCreateRule}
-                      >
-                        保存规则
-                      </Button>
-                    </div>
-                    {includeRules.length ? (
-                      <ScrollArea className="h-full pr-2">
-                        <ul className="space-y-3 text-sm">
-                          {includeRules.map((rule) => (
-                            <li
-                              key={rule.id}
-                              className={cn(
-                                "space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3 transition",
-                                !rule.enabled && "opacity-60",
-                              )}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div className="text-sm font-semibold">
-                                    {rule.pattern}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    {rule.targetPath}
-                                  </div>
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button
-                                    onClick={() => handleRuleToggle(rule)}
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className={cn(
-                                      "text-muted-foreground",
-                                      rule.enabled
-                                        ? "hover:text-emerald-400"
-                                        : "hover:text-foreground",
-                                    )}
-                                    aria-label={rule.enabled ? "禁用规则" : "启用规则"}
-                                  >
-                                    <Power className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleRuleDelete(rule.id)}
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-muted-foreground transition hover:text-destructive"
-                                    aria-label="删除规则"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {rule.conflicts?.length ? (
-                                <ul className="space-y-1 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive-foreground">
-                                  {rule.conflicts.map((conflict) => (
-                                    <li key={conflict.ruleId}>{conflict.reason}</li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                              <div className="text-[11px] text-muted-foreground/70">
-                                最近更新：{formatTimestamp(rule.lastUpdated)}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </ScrollArea>
-                    ) : (
-                      <EmptyState
-                        title="尚未定义 includeIf 规则"
-                        description="添加规则以根据仓库路径自动加载额外配置。"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex flex-col gap-4 overflow-hidden">
-                <Card className="flex h-full flex-col">
-                  <CardHeader className="flex flex-row items-start justify-between space-y-0">
-                    <div className="space-y-1">
-                      <CardTitle>仓库</CardTitle>
-                      <CardDescription>
-                        已检测到 {repositories.length} 个仓库
-                      </CardDescription>
-                    </div>
                   </CardHeader>
                   <CardContent className="flex-1 overflow-hidden">
                     {repositories.length ? (
@@ -729,22 +494,39 @@ function App() {
                                   }
                                 }}
                                 className={cn(
-                                  "cursor-pointer rounded-lg border border-transparent bg-muted/30 p-4 text-sm shadow-sm transition hover:border-primary/50 hover:bg-primary/10",
+                                  "group cursor-pointer rounded-lg border border-transparent bg-muted/30 p-4 text-sm shadow-sm transition hover:border-primary/50 hover:bg-primary/10",
                                   isSelected
                                     ? "border-primary/70 bg-primary/15 shadow"
                                     : "border-border/40",
                                 )}
                               >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-semibold">
-                                    {repo.name}
-                                  </span>
-                                  <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] uppercase tracking-tight text-primary-foreground/80">
-                                    {repo.status || "未知"}
-                                  </span>
-                                </div>
-                                <div className="mt-1 truncate text-xs text-muted-foreground">
-                                  {repo.path}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-sm font-semibold">
+                                      {repo.name}
+                                    </span>
+                                    <span className="truncate text-xs text-muted-foreground">
+                                      {repo.path}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] uppercase tracking-tight text-primary-foreground/80">
+                                      {repo.status || "未知"}
+                                    </span>
+                                    <Button
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void handleRemoveRepository(repo);
+                                      }}
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-muted-foreground transition hover:text-destructive"
+                                      aria-label={`移除 ${repo.name}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </div>
                                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/80">
                                   {repo.isWorktree && (
@@ -762,9 +544,7 @@ function App() {
                                       bare
                                     </span>
                                   )}
-                                  <span>
-                                    上次扫描：{formatTimestamp(repo.lastScanTime)}
-                                  </span>
+                                  <span>上次刷新：{formatTimestamp(repo.lastScanTime)}</span>
                                 </div>
                               </div>
                             );
@@ -773,13 +553,16 @@ function App() {
                       </ScrollArea>
                     ) : (
                       <EmptyState
-                        title="未检测到仓库"
-                        description="请先添加扫描目录，或点击顶部的“刷新”重新扫描。"
+                        title="尚未添加仓库"
+                        description="点击右上角的“添加仓库”来管理新的 Git 仓库。"
                       />
                     )}
                   </CardContent>
                 </Card>
 
+              </div>
+
+              <div className="flex flex-col gap-4 overflow-hidden">
                 <Card className="flex h-full flex-col">
                   <CardHeader className="flex flex-row items-start justify-between space-y-0">
                     <div className="space-y-1">
