@@ -350,7 +350,7 @@ function App() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="border-b border-border/60 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-6 py-4">
+        <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center justify-between px-6">
           <div className="flex items-center gap-3 text-lg font-semibold">
             <Disc3 className="h-5 w-5 text-primary" />
             <span>Git Config Manager</span>
@@ -374,10 +374,10 @@ function App() {
       <Tabs
         value={activeTab}
         onValueChange={(value) => handleTabChange(value as TabKey)}
-        className="flex flex-1 flex-col"
+        className="flex flex-1 min-h-0 flex-col"
       >
         <div className="border-b border-border/60 bg-background/60">
-          <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-6 pb-2 pt-4">
+          <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-6 py-3">
             <TabsList className="bg-muted/40">
               <TabsTrigger value="global">全局配置</TabsTrigger>
               <TabsTrigger value="repositories">仓库</TabsTrigger>
@@ -397,27 +397,28 @@ function App() {
           </div>
         </div>
 
-        <div className="mx-auto flex w-full max-w-[1200px] flex-col flex-1 overflow-hidden px-6 pb-8 pt-4">
-          <div className="min-h-[36px]">
-            {error && (
-              <div className="flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/15 px-4 py-3 text-sm text-destructive-foreground">
-                <span className="font-medium">错误：</span>
-                <span>{error}</span>
-              </div>
-            )}
-            {!error && infoMessage && (
-              <div className="flex items-center gap-3 rounded-md border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary-foreground">
-                <span className="font-medium">提示：</span>
-                <span>{infoMessage}</span>
-              </div>
-            )}
-          </div>
+        <div className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col overflow-hidden px-6 pb-8 pt-3 min-h-0">
+          {(error || infoMessage) && (
+            <div className="mb-3">
+              {error ? (
+                <div className="flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/15 px-4 py-3 text-sm text-destructive-foreground">
+                  <span className="font-medium">错误：</span>
+                  <span>{error}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-md border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary-foreground">
+                  <span className="font-medium">提示：</span>
+                  <span>{infoMessage}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <TabsContent
             value="global"
-            className="flex flex-1 flex-col overflow-hidden"
+            className="flex flex-1 min-h-0 flex-col overflow-hidden"
           >
-            <Card className="flex h-full flex-col">
+            <Card className="flex h-full min-h-0 flex-col">
               <CardHeader className="flex flex-row items-start justify-between space-y-0">
                 <div className="space-y-1">
                   <CardTitle>全局配置</CardTitle>
@@ -437,7 +438,7 @@ function App() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="flex-1 overflow-hidden">
+              <CardContent className="flex-1 overflow-hidden min-h-0">
                 {globalSections.length ? (
                   <ScrollArea className="h-full pr-2">
                     <ConfigSections sections={globalSections} />
@@ -454,10 +455,10 @@ function App() {
 
           <TabsContent
             value="repositories"
-            className="flex flex-1 flex-col overflow-hidden"
+            className="flex flex-1 min-h-0 flex-col overflow-hidden"
           >
-            <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[360px_1fr]">
-              <div className="flex flex-col gap-4 overflow-hidden">
+            <div className="grid flex-1 gap-4 overflow-hidden min-h-0 lg:grid-cols-[360px_1fr]">
+              <div className="flex flex-col gap-4 overflow-hidden min-h-0">
                 <Card className="flex h-full flex-col">
                   <CardHeader className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -472,10 +473,11 @@ function App() {
                       </Button>
                     </div>
                     <CardDescription>
-                      选择本地 Git 仓库，将其加入管理列表。当前共 {repositories.length} 个仓库。
+                      选择本地 Git 仓库，将其加入管理列表。当前共{" "}
+                      {repositories.length} 个仓库。
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-hidden">
+                  <CardContent className="flex-1 overflow-hidden min-h-0">
                     {repositories.length ? (
                       <ScrollArea className="h-full pr-2">
                         <div className="space-y-2">
@@ -488,7 +490,10 @@ function App() {
                                 tabIndex={0}
                                 onClick={() => handleSelectRepository(repo.id)}
                                 onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
+                                  if (
+                                    event.key === "Enter" ||
+                                    event.key === " "
+                                  ) {
                                     event.preventDefault();
                                     handleSelectRepository(repo.id);
                                   }
@@ -544,7 +549,10 @@ function App() {
                                       bare
                                     </span>
                                   )}
-                                  <span>上次刷新：{formatTimestamp(repo.lastScanTime)}</span>
+                                  <span>
+                                    上次刷新：
+                                    {formatTimestamp(repo.lastScanTime)}
+                                  </span>
                                 </div>
                               </div>
                             );
@@ -559,11 +567,10 @@ function App() {
                     )}
                   </CardContent>
                 </Card>
-
               </div>
 
-              <div className="flex flex-col gap-4 overflow-hidden">
-                <Card className="flex h-full flex-col">
+              <div className="flex flex-col gap-4 overflow-hidden min-h-0">
+                <Card className="flex h-full min-h-0 flex-col">
                   <CardHeader className="flex flex-row items-start justify-between space-y-0">
                     <div className="space-y-1">
                       <CardTitle>配置总览</CardTitle>
@@ -580,7 +587,7 @@ function App() {
                       </Badge>
                     )}
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-hidden">
+                  <CardContent className="flex-1 overflow-hidden min-h-0">
                     {configSections.length ? (
                       <ScrollArea className="h-full pr-2">
                         <ConfigSections sections={configSections} />
