@@ -1,4 +1,7 @@
-build/bin
+build/bin/
+build/darwin/
+build/linux/
+build/windows/
 node_modules
 frontend/dist
 .DS_Store
