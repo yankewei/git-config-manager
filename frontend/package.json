@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "postbuild": "node ./scripts/restore-dist-readme.js",
     "preview": "vite preview",
     "lint": "npm run lint:ts && npm run lint:format",
     "lint:ts": "tsc --noEmit",
