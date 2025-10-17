@@ -3,7 +3,8 @@ build/darwin/
 build/linux/
 build/windows/
 node_modules
-frontend/dist
+frontend/dist/*
+!frontend/dist/README.md
 .DS_Store
 .gocache
 frontend/wailsjs/runtime
